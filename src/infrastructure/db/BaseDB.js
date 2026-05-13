@@ -12,18 +12,10 @@ class BaseDB {
         throw new Error("Method 'maxRetriesDbConnect()' must be implemented.");
     }
 
-    async addToWaiting(job) {}
+    async fromWaitingToActive(jobJson) {
+        throw new Error("Method 'fromWaitingToActive()' must be implemented.");
+    }
 
-    async moveToDelayed(jobId, runAt) {}
-
-    async addToActive(jobId) {}
-
-    async claimJob(workerId, priorityOrder) {}   // LUA
-
-    async completeJob(jobId) {}
-
-    async failJob(jobId) {}
-
-    async requeueStaleJobs() {} 
+    
     
 }

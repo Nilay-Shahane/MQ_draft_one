@@ -1,15 +1,22 @@
 const Redis = require('ioredis');
 const BaseDB = require('./BaseDB');
+const fs = require("fs");
+const path = require("path");
+
+const waitToActiveLua = fs.readFileSync(
+  path.join(__dirname, "../lua/ClaimNextJob.lua"),
+  "utf8"
+);
 
 class RedisDB extends BaseDB {
+    
     constructor(config = {}) {
-        super();
-
+        super();    
         this.keyMap = {
             priority: 'jiniq-draft:PrioQ',
             normal: 'jiniq-draft:NormalQ',
             active:  'jiniq-draft:ActiveQ',
-            lock:    'jiniq-draft:lock'
+            lock:    'jiniq-draft:Lock'
         };
 
         this.client = new Redis({
@@ -19,107 +26,48 @@ class RedisDB extends BaseDB {
             ...config
         });
 
-        this.client.defineCommand('getNextJob', {
-            numberOfKeys: 3,
-            lua: `
-                local source = 1
-                local job = redis.call('ZRANGE', KEYS[1], 0, 0)
+       this.client.defineCommand('claimNextJob', {
+        numberOfKeys: 4,
+        lua: waitToActiveLua
+    });
 
-                if #job == 0 then
-                    job = redis.call('ZRANGE', KEYS[2], 0, 0)
-                    source = 2
-                end
-
-                if #job > 0 then
-                    local jobId = job[1]
-
-                    if source == 1 then
-                        redis.call('ZREM', KEYS[1], jobId)
-                    else
-                        redis.call('ZREM', KEYS[2], jobId)
-                    end
-
-                    -- move to active queue
-                    redis.call('ZADD', KEYS[3], ARGV[1], jobId)
-
-                    return jobId
-                end
-
-                return nil
-            `
-        });
+        this.client.defineCommand('renewJobLease' , {
+            numberOfKeys : 1,
+            lua : checkAndUpdateHeartbeatLua
+        })
+    
     }
+
+
 
     async maxRetriesDbConnect(times) {
         return Math.min(times * 100, 3000);
     }
 
-    // ---------------- HASH ----------------
-    async hashSet({ name, field, value, data }) {
-        if (data) {
-            return await this.client.hset(name, data);
-        }
-        return await this.client.hset(name, field, value);
-    }
-
-    async hashGet({ name }) {
-        return await this.client.hgetall(name);
-    }
-
-    // ---------------- ZSET ----------------
-    async zsetAdd({ name, score, member }) {
-        return await this.client.zadd(name, score, member);
-    }
-
-    async zsetRem({ name, member }) {
-        return await this.client.zrem(name, member);
-    }
-
-    async zsetRead({ name, maxScore = Date.now() }) {
-        return await this.client.zrangebyscore(name, '-inf', maxScore);
-    }
-
-    // ---------------- LIST ----------------
-    async listPush({ name, value }) {
-        return await this.client.lpush(name, value);
-    }
-
-    async listPop({ name }) {
-        return await this.client.rpop(name);
-    }
-
-    // ---------------- STREAM ----------------
-    async streamAdd({ name, data }) {
-        return await this.client.xadd(
-            name,
-            '*',
-            'payload',
-            JSON.stringify(data)
-        );
-    }
-
-    async streamRead({ name, count = 10, lastId = '0' }) {
-        return await this.client.xread(
-            'COUNT',
-            count,
-            'STREAMS',
-            name,
-            lastId
-        );
-    }
-
+   
     // ---------------- CLAIM JOB ----------------
-    async claimNextJob({ fromQueues, toQueue }) {
+    async fromWaitingToActive(jobJson) {
+        const {ttl = 30000 , priorityOffset = 10000 , workerId } = jobJson
         const keys = [
-            this.keyMap[fromQueues[0]],
-            this.keyMap[fromQueues[1]],
-            this.keyMap[toQueue]
+            this.keyMap.priority,
+            this.keyMap.normal , 
+            this.keyMap.active,
+            this.keyMap.lock
         ];
 
         const timestamp = Date.now();
 
-        return await this.client.getNextJob(...keys, timestamp);
+        return await this.client.claimNextJob(...keys , ttl , timestamp , priorityOffset , workerId);
     }
+
+    async checkAndUpdateHeartbeat(jobJson) {
+        const {heartbeat , jobId , workerId} = jobJson
+        const keys = [
+            this.keyMap.lock
+        ]
+        return await this.client.renewJobLease(...keys , jobId , workerId , heartbeat)
+    }
+    
 }
 
 module.exports = RedisDB;
