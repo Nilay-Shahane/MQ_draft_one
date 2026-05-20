@@ -1,28 +1,32 @@
-const Supervisor = require("../Supervisor");
-
-class Worker extends Supervisor{
-    constructor(){
-        
+class Worker{
+    constructor(Heartbeat , jobId , workerId, ttl , userProcess , getPayload , checkAndUpdateHeartbeat){
+        this.ttl = ttl
+        this.workerId = workerId 
+        this.jobId = jobId 
+        this.userProcess = userProcess
+        this.Heartbeat = Heartbeat
+        this.getPayload =getPayload
+        this.checkAndUpdateHeartbeat = checkAndUpdateHeartbeat
     }
 
     beginWork = async () =>{
-        try{
-            await this.randomOffset()
-            await db.sendHeartBeat(this.jobId, this.workerId)
-            this.runHeartbeat().catch(e => {
-                // Handle background failure (e.g., stop the worker)
-            });
+        const newHeartbeatInstance = new this.Heartbeat(this.ttl,this.workerId , this.jobId , this.checkAndUpdateHeartbeat)
         
-            await db.getPayload(this.jobId)
+        try{
+            const payload = await this.getPayload(this.jobId)
+
+            await newHeartbeatInstance.startHeartbeatProcess()
 
             const resp =await this.userProcess(payload)
             return resp
         }
         catch(e){
-
+            // would be flled after catch structure is made 
         }
-        finally{
-            this.stopHeartbeat = true
+        finally{ 
+            newHeartbeatInstance.setStopHeartBeat(true)
         }
     }
 }
+
+module.exports = Worker

@@ -1,73 +1,63 @@
-const Redis = require('ioredis');
-const BaseDB = require('./BaseDB');
-const fs = require("fs");
-const path = require("path");
+const Redis = require('ioredis')
+const BaseDB = require('./BaseDB')
+const fs = require('fs')
+const path = require('path')
 
-const waitToActiveLua = fs.readFileSync(
-  path.join(__dirname, "../lua/ClaimNextJob.lua"),
-  "utf8"
-);
+const waitToActiveLua = fs.readFileSync(path.join(__dirname, "../lua/ClaimNextJob.lua"), "utf8");
+const checkAndUpdateHeartbeatLua = fs.readFileSync(path.join(__dirname, "../lua/RenewJobLease.lua"), "utf8");
+const checkAndCompleteLua = fs.readFileSync(path.join(__dirname, "../lua/CheckAndComplete.lua"), "utf8");
+const addToDelayedOrDeadLua = fs.readFileSync(path.join(__dirname, "../lua/AddToDelayedOrDeadLua.lua"), "utf8");
 
-class RedisDB extends BaseDB {
-    
-    constructor(config = {}) {
-        super();    
-        this.keyMap = {
-            priority: 'jiniq-draft:PrioQ',
-            normal: 'jiniq-draft:NormalQ',
-            active:  'jiniq-draft:ActiveQ',
-            lock:    'jiniq-draft:Lock'
-        };
+
+class RedisDB extends BaseDB{
+    constructor(config={}){
+        super()
 
         this.client = new Redis({
             host: config.host || '127.0.0.1',
             port: config.port || 6379,
             retryStrategy: (times) => this.maxRetriesDbConnect(times),
             ...config
+        })
+
+        this.client.defineCommand('claimNextJob', {
+            numberOfKeys: 4,
+            lua: waitToActiveLua
         });
 
-       this.client.defineCommand('claimNextJob', {
-        numberOfKeys: 4,
-        lua: waitToActiveLua
-    });
+        this.client.defineCommand('renewJobLease', {
+            numberOfKeys: 1,
+            lua: checkAndUpdateHeartbeatLua
+        });
 
-        this.client.defineCommand('renewJobLease' , {
-            numberOfKeys : 1,
-            lua : checkAndUpdateHeartbeatLua
+        this.client.defineCommand('checkAndComplete',{
+            numberOfKeys : 3,
+            lua : checkAndCompleteLua
         })
-    
+
+        this.client.defineCommand('addToDelayedOrDead',{
+            numberOfKeys : 4,
+            lua : addToWaitingOrDeadLua
+        })
+
+        this.client.on('error', (err) => console.error(`[RedisDB Port ${config.port || 6379}] Error:`, err));
     }
-
-
-
-    async maxRetriesDbConnect(times) {
+    maxRetriesDbConnect(times) {
+        // Exponential backoff with a cap of 3 seconds
         return Math.min(times * 100, 3000);
     }
 
-   
-    // ---------------- CLAIM JOB ----------------
-    async fromWaitingToActive(jobJson) {
-        const {ttl = 30000 , priorityOffset = 10000 , workerId } = jobJson
-        const keys = [
-            this.keyMap.priority,
-            this.keyMap.normal , 
-            this.keyMap.active,
-            this.keyMap.lock
-        ];
-
-        const timestamp = Date.now();
-
-        return await this.client.claimNextJob(...keys , ttl , timestamp , priorityOffset , workerId);
+    async run(command,...args){
+        if(typeof this.client[command]!=='function'){
+            throw new Error(`Redis command or custom Lua script "${command}" does not exist.`);
+        }
+        return this.client[command](...args);
     }
 
-    async checkAndUpdateHeartbeat(jobJson) {
-        const {heartbeat , jobId , workerId} = jobJson
-        const keys = [
-            this.keyMap.lock
-        ]
-        return await this.client.renewJobLease(...keys , jobId , workerId , heartbeat)
+    async disconnect() {
+        await this.client.quit();
     }
-    
+
 }
 
-module.exports = RedisDB;
+module.exports = RedisDB 

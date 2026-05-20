@@ -1,54 +1,70 @@
 class HeartBeat{
     #stopHeartbeat = false
-    #flagForOffset = false
-    constructor(heartbeat,workerId , jobId , userProcess){
-        this.heartbeat = heartbeat
+    #resolveSleep = null
+    #timeoutId = null
+    constructor(ttl,workerId , jobId , checkAndUpdateHeartbeat){
+        this.ttl = ttl
         this.workerId = workerId 
-        this.jobId = jobId 
-        this.userProcess = userProcess
+        this.jobId = jobId
+        this.checkAndUpdateHeartbeat = checkAndUpdateHeartbeat 
+    }
+    sleep = (ms) => {
+        return new Promise((resolve) => {
+            this.#resolveSleep = resolve;
+            this.#timeoutId = setTimeout(()=>{
+                this.#resolveSleep = null
+                this.#timeoutId = null;
+                resolve()
+            },ms)
+        })
     }
     
     getStopHeartBeat(){
         return this.#stopHeartbeat
     }
     setStopHeartBeat(value){
-        this.#stopHeartbeat=value
-    }
-    getFlagForOffset(){
-        return this.#flagForOffset
-    }
-    setFlagForOffset(value){
-        this.#flagForOffset=value
+        this.#stopHeartbeat = value
+        if(value){
+            if (this.#timeoutId) {
+                clearTimeout(this.#timeoutId);
+                this.#timeoutId = null;
+            }
+            if (this.#resolveSleep) {
+                this.#resolveSleep();
+                this.#resolveSleep = null;
+            }
+        }
     }
 
     randomOffset = async () =>{
-        if(! this.getFlagForOffset()){
-            let jitter = Math.random()*1000
-            await sleep(jitter)
-            this.setFlagForOffset(true)
-        }
-        return
+        const jitter = Math.random() * 50 
+        await this.sleep(jitter)
     }
 
 
     runHeartbeat = async () => {
         try {
-            
+            while (!this.#stopHeartbeat) {
 
-            while (!this.getStopHeartBeat()) {
+                await this.sleep(this.ttl / 3)
 
-                await sleep(this.heartbeat / 3)
+                if (this.#stopHeartbeat) break;
 
-                await db.sendHeartBeat(this.jobId, this.workerId)
+                await this.checkAndUpdateHeartbeat(this.ttl , this.jobId , this.workerId)
 
             }
 
         } catch (e) {
-            //error to be filled after making error fs
-            this.setStopHeartBeat(true) 
+            this.#stopHeartbeat = true 
         }
     }
 
-
+    startHeartbeatProcess = async() =>{
+         await this.randomOffset()
+         await this.checkAndUpdateHeartbeat(this.ttl , this.jobId, this.workerId)
+         this.runHeartbeat().catch(e => {
+                // Handle background failure (e.g., stop the worker)
+        });
+    }
     
 }
