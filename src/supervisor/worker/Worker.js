@@ -1,5 +1,7 @@
-class Worker{
+const EventEmitter = require('events');
+class Worker extends EventEmitter{
     constructor(Heartbeat , jobId , workerId, ttl , userProcess , getPayload , checkAndUpdateHeartbeat){
+        super()
         this.ttl = ttl
         this.workerId = workerId 
         this.jobId = jobId 
@@ -18,10 +20,19 @@ class Worker{
             await newHeartbeatInstance.startHeartbeatProcess()
 
             const resp =await this.userProcess(payload)
+            this.emit('completedJob',{
+                workerId: this.workerId,
+                jobId: this.jobId
+            })
             return resp
         }
         catch(e){
             // would be flled after catch structure is made 
+            this.emit('failedJob',{
+                workerId: this.workerId,
+                jobId: this.jobId,
+                error: e.message||e}
+            )
         }
         finally{ 
             newHeartbeatInstance.setStopHeartBeat(true)

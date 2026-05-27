@@ -55,7 +55,7 @@ class RedisStorage extends BaseStorage{
         return await this.manager.checkAndComplete(...keys , jobId , workerId)
     }
 
-    async failedToJob(jobId ,workerId){
+    async failedToJob(jobId ,workerId , e){
         const keys = [
             this.keyMap.lock,
             this.keyMap.active,
