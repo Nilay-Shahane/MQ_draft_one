@@ -2,11 +2,11 @@ class HeartBeat{
     #stopHeartbeat = false
     #resolveSleep = null
     #timeoutId = null
-    constructor(ttl,workerId , jobId , checkAndUpdateHeartbeat){
+    constructor(ttl,workerId , jobId , storage){
         this.ttl = ttl
         this.workerId = workerId 
         this.jobId = jobId
-        this.checkAndUpdateHeartbeat = checkAndUpdateHeartbeat 
+        this.storage = storage 
     }
     sleep = (ms) => {
         return new Promise((resolve) => {
@@ -50,7 +50,7 @@ class HeartBeat{
 
                 if (this.#stopHeartbeat) break;
 
-                await this.checkAndUpdateHeartbeat(this.ttl , this.jobId , this.workerId)
+                await this.storage.checkAndUpdateHeartbeat(this.ttl , this.jobId , this.workerId)
 
             }
 
@@ -61,7 +61,7 @@ class HeartBeat{
 
     startHeartbeatProcess = async() =>{
          await this.randomOffset()
-         await this.checkAndUpdateHeartbeat(this.ttl , this.jobId, this.workerId)
+         await this.storage.checkAndUpdateHeartbeat(this.ttl , this.jobId, this.workerId)
          this.runHeartbeat().catch(e => {
                 // Handle background failure (e.g., stop the worker)
         });

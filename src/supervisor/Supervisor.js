@@ -11,7 +11,7 @@ class Supervisor {
         this.Heartbeat = Heartbeat; 
         this.userProcess = userProcess;
         this.maxConcurrency = maxConcurrency;
-        this.redisInstance = new RedisStorage(this.name , manager , fetcher)
+        this.storage = new RedisStorage(this.name , manager , fetcher)
         this.activeWorkers = new Set(); 
     }
 
@@ -25,8 +25,7 @@ class Supervisor {
             workerId, 
             ttl, 
             this.userProcess,
-            this.redisInstance.getPayload.bind(this.redisInstance),
-            this.redisInstance.checkAndUpdateHeartbeat.bind(this.redisInstance)
+            this.storage,
         );
 
         const workerPromise = newWorker.beginWork();
