@@ -5,9 +5,9 @@ const fetcher = new RedisDB(config)
 //ignore them for now they would be in the index.js / bootstrap later
 
 class Supervisor {
-    constructor(name, userProcess, Worker, Heartbeat, maxConcurrency = 10 ) {
+    constructor(name, userProcess, JobExecutor, Heartbeat, maxConcurrency = 10 ) {
         this.name = name;
-        this.Worker = Worker;
+        this.JobExecutor = JobExecutor;
         this.Heartbeat = Heartbeat; 
         this.userProcess = userProcess;
         this.maxConcurrency = maxConcurrency;
@@ -15,11 +15,11 @@ class Supervisor {
         this.activeWorkers = new Set(); 
     }
 
-    assignWorker = async (jobJson) => {
+    assignJob = async (jobJson) => {
 
         const { jobId, ttl, workerId } = jobJson;
 
-        const newWorker = new this.Worker(
+        const newWorker = new this.JobExecutor(
             this.Heartbeat, 
             jobId, 
             workerId, 
