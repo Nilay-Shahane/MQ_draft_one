@@ -3,6 +3,7 @@ const BaseDB = require('./BaseDB')
 const fs = require('fs')
 const path = require('path')
 
+const addJobLua = fs.readFileSync(path.join(__dirname, "../lua/AddJob.lua"),"utf8");
 const waitToActiveLua = fs.readFileSync(path.join(__dirname, "../lua/ClaimNextJob.lua"), "utf8");
 const checkAndUpdateHeartbeatLua = fs.readFileSync(path.join(__dirname, "../lua/RenewJobLease.lua"), "utf8");
 const checkAndCompleteLua = fs.readFileSync(path.join(__dirname, "../lua/CheckAndComplete.lua"), "utf8");
@@ -19,6 +20,11 @@ class RedisDB extends BaseDB{
             retryStrategy: (times) => this.maxRetriesDbConnect(times),
             ...config
         })
+
+        this.client.defineCommand('addJobtoQueue',{
+            numberOfKeys:4,
+            lua:addJobLua
+        });
 
         this.client.defineCommand('claimNextJob', {
             numberOfKeys: 4,
@@ -37,7 +43,7 @@ class RedisDB extends BaseDB{
 
         this.client.defineCommand('addToDelayedOrDead',{
             numberOfKeys : 4,
-            lua : addToWaitingOrDeadLua
+            lua : addToDelayedOrDeadLua
         })
 
         this.client.on('error', (err) => console.error(`[RedisDB Port ${config.port || 6379}] Error:`, err));
@@ -53,7 +59,10 @@ class RedisDB extends BaseDB{
         }
         return this.client[command](...args);
     }
-
+  pipeline() {
+        return this.client.pipeline();
+    }
+    
     async disconnect() {
         await this.client.quit();
     }
