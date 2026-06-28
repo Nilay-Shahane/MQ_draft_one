@@ -21,7 +21,7 @@ class RedisStorage extends BaseStorage{
     }
 
     async getPayload(jobId){
-        return this.manager.hget(`${this.keyMap.main}:${jobId}`,'payload')
+        return this.manager.client.hget(`${this.keyMap.main}:${jobId}`,'payload')
     }
     async addJobToQueue(serializedJob ,options = {}){
         const jobId = serializedJob.id;
