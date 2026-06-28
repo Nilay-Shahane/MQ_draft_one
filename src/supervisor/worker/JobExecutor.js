@@ -1,20 +1,20 @@
 class JobExecutor{
-    constructor(Heartbeat , jobId , workerId, ttl ,maxTimeoutMs ,  userProcess , storage){
+    constructor(Heartbeat , jobId , workerId, ttl ,maxTimeoutMs ,  userProcess , dbActions){
         this.ttl = ttl
         this.maxTimeoutMs = maxTimeoutMs
         this.workerId = workerId 
         this.jobId = jobId 
         this.userProcess = userProcess
         this.Heartbeat = Heartbeat
-        this.storage = storage
+        this.dbActions = dbActions
     }
 
 
     beginWork = async () =>{
-        const newHeartbeatInstance = new this.Heartbeat(this.ttl,this.workerId , this.jobId , this.storage)
+        const newHeartbeatInstance = new this.Heartbeat(this.ttl,this.workerId , this.jobId , this.dbActions)
         
         try{
-            const payload = await this.storage.getPayload(this.jobId)
+            const payload = await this.dbActions.getPayload(this.jobId)
             
             await newHeartbeatInstance.startHeartbeatProcess()
 
@@ -29,12 +29,12 @@ class JobExecutor{
                 timeoutPromise
             ])
 
-            const db_resp = await this.storage.addToCompleted(this.workerId , this.jobId)
+            const db_resp = await this.dbActions.addToCompleted()
             return resp
         }
         catch(e){
             // would be flled after catch structure is made 
-            const db_resp_failed = await this.storage.addToFailed(this.jobId , this.workerId , e)
+            const db_resp_failed = await this.dbActions.addToFailed(e)
         }
         finally{ 
             newHeartbeatInstance.setStopHeartBeat(true)
