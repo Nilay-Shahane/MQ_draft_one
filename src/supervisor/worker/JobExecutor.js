@@ -17,9 +17,9 @@ class JobExecutor{
             const payload = await this.dbActions.getPayload(this.jobId)
             
             await newHeartbeatInstance.startHeartbeatProcess()
-
+            let timeoutId;
             const timeoutPromise = new Promise((_,reject)=>{
-                let timeoutId = setTimeout(()=>{
+                timeoutId = setTimeout(()=>{
                     reject(new Error(`JOB_TIMEOUT: Process exceeded max execution time of ${this.maxTimeoutMs}ms`));
                 } , this.maxTimeoutMs)
             })
@@ -31,9 +31,9 @@ class JobExecutor{
 
             const db_resp = await this.dbActions.addToCompleted()
             return resp
+            
         }
         catch(e){
-            // would be flled after catch structure is made 
             const db_resp_failed = await this.dbActions.addToFailed(e)
         }
         finally{ 

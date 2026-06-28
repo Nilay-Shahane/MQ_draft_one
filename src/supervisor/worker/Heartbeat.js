@@ -55,7 +55,7 @@ class HeartBeat{
             }
 
         } catch (e) {
-            this.#stopHeartbeat = true 
+            this.setStopHeartBeat(true) 
         }
     }
 

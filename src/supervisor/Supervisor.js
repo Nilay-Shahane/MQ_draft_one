@@ -52,7 +52,7 @@ class Supervisor extends EventEmitter {
                 if(!returnedJson) break;
                 
                 foundWork = true;
-                const assignmentResponse = await this.assignJob(returnedJson)
+                const assignmentResponse = this.assignJob(returnedJson)
             }
         }
         catch(e) {
