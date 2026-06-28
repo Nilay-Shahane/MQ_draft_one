@@ -38,6 +38,7 @@ class JobExecutor{
         }
         finally{ 
             newHeartbeatInstance.setStopHeartBeat(true)
+            clearTimeout(timeoutId);
         }
     }
 }

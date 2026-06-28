@@ -3,11 +3,14 @@ const RedisStorage = require('../infrastructure/db/RedisStorage')
 const JobFetcher = require('./jobfetcher/JobFetcher')
 const manager = new RedisDB(config)
 const fetcher = new RedisDB(config)
-//ignore them for now they would be in the index.js / bootstrap later
+const EventEmitter = require('events')
 
-class Supervisor {
+class Supervisor extends EventEmitter {
     #activeClaim = false
+    #pollInterval = 50 
+
     constructor(jobJson) {
+        super()
         this.name = jobJson.name;
         this.JobExecutor = jobJson.JobExecutor;
         this.Heartbeat = jobJson.Heartbeat; 
@@ -19,20 +22,21 @@ class Supervisor {
         this.ttl = jobJson.ttl
         this.priorityOffset = jobJson.priorityOffset
     }
-    hasSlot=()=>{
-        return (this.activeWorkers.size < this.maxConcurrency) ;
+
+    hasSlot = () => {
+        return (this.activeWorkers.size < this.maxConcurrency);
     }
 
-    workerIdGenerator = async () =>{    
-        return randomUUID(); // sync it is , but still for no risk + future decisions
+    workerIdGenerator = async () => {    
+        return randomUUID(); 
     }
 
-    fetchJob = async () =>{
+    fetchJob = async () => {
         const workerId = await this.workerIdGenerator()
         const returnedJson = await this.storage.fromWaitingToActive({
-            ttl:this.ttl,
-            priorityOffset : this.priorityOffset ,
-            workerId : workerId,
+            ttl: this.ttl,
+            priorityOffset: this.priorityOffset,
+            workerId: workerId,
         })
         return returnedJson;
     }
@@ -40,53 +44,57 @@ class Supervisor {
     claimHandler = async () => {
         if(this.#activeClaim) return;
         this.#activeClaim = true;
-        try{
-            while(this.hasSlot()){
-                
+        let foundWork = false; 
+
+        try {
+            while(this.hasSlot()) {
                 const returnedJson = await this.fetchJob()
                 if(!returnedJson) break;
-                const {jobId , workerId} = returnedJson;
+                
+                foundWork = true;
                 const assignmentResponse = await this.assignJob(returnedJson)
             }
         }
-        catch(e){
+        catch(e) {
             console.error("Error during job claiming process:", e);
         }
-        finally{
-        this.#activeClaim=false;
+        finally {
+            this.#activeClaim = false;
+
+            
+            if (foundWork) {
+                this.#pollInterval = 50; 
+                this.emit('claimNextJob'); 
+            } else {
+                this.#pollInterval = Math.min(this.#pollInterval * 1.5, 2000);
+                setTimeout(() => this.emit('claimNextJob'), this.#pollInterval);
+            }
         }
     }
-    
 
     assignJob = async (jobJson) => {
-
         const { jobId, workerId } = jobJson;
 
         const dbActions = {
-            getPayload : () => this.storage.getPayload(jobId),   
-            addToCompleted: ()  => this.storage.addToCompleted(workerId, jobId),
-            addToFailed:    (err)     => this.storage.addToFailed(jobId, workerId , err),
+            getPayload: () => this.storage.getPayload(jobId),   
+            addToCompleted: () => this.storage.addToCompleted(workerId, jobId),
+            addToFailed: (err) => this.storage.addToFailed(jobId, workerId , err),
             checkAndUpdateHeartbeat: () => this.storage.checkAndUpdateHeartbeat(this.ttl , jobId , workerId)
         }
 
         const newWorker = new this.JobExecutor(
-            this.Heartbeat, 
-            jobId, 
-            workerId, 
-            this.ttl, 
-            this.maxTimeoutMs,
-            this.userProcess, 
-            dbActions,
+            this.Heartbeat, jobId, workerId, this.ttl, 
+            this.maxTimeoutMs, this.userProcess, dbActions
         );
 
         const workerPromise = Promise.resolve().then(() => newWorker.beginWork());
 
         this.activeWorkers.add(workerId);
 
-
         workerPromise.finally(() => {
             this.activeWorkers.delete(workerId);
-            this.claimHandler();
+            this.#pollInterval = 50; 
+            this.emit('claimNextJob');
         });
 
         return true; 
@@ -94,6 +102,17 @@ class Supervisor {
 
     get availableSlots() {
         return this.maxConcurrency - this.activeWorkers.size;
+    }
+
+    callClaimHandler = () => {
+        this.on('claimNextJob', async () => {
+            try {
+                await this.claimHandler()
+            }
+            catch(e) {
+                console.error(e); // <--- FIXED: Was console.error(err) which crashed
+            }
+        })
     }
 }
 
