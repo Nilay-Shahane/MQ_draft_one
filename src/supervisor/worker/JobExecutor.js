@@ -11,21 +11,24 @@ class JobExecutor{
 
 
     beginWork = async () =>{
-        const newHeartbeatInstance = new this.Heartbeat(this.ttl,this.workerId , this.jobId , this.dbActions)
-        
+        const controller = new AbortController()
+        const signal = controller.signal
+        const newHeartbeatInstance = new this.Heartbeat(this.ttl,this.workerId , this.jobId , this.dbActions , ()=>controller.abort())
+        let timeoutId;
         try{
             const payload = await this.dbActions.getPayload(this.jobId)
             
             await newHeartbeatInstance.startHeartbeatProcess()
-            let timeoutId;
+            
             const timeoutPromise = new Promise((_,reject)=>{
                 timeoutId = setTimeout(()=>{
+                    controller.abort()
                     reject(new Error(`JOB_TIMEOUT: Process exceeded max execution time of ${this.maxTimeoutMs}ms`));
                 } , this.maxTimeoutMs)
             })
 
             const resp =await Promise.race([
-                this.userProcess(payload),
+                this.userProcess(payload,signal),
                 timeoutPromise
             ])
 
@@ -34,7 +37,13 @@ class JobExecutor{
             
         }
         catch(e){
-            const db_resp_failed = await this.dbActions.addToFailed(e)
+            try {
+                await this.dbActions.addToFailed(e);
+            } catch (dbErr) {
+                console.log(`Error in db while performed failed job shifting operation ${dbErr}`)
+                throw new Error("Failed to record failed job", { cause: dbErr });
+                
+            }
         }
         finally{ 
             newHeartbeatInstance.setStopHeartBeat(true)

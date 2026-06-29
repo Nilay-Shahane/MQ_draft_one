@@ -52,7 +52,10 @@ class Supervisor extends EventEmitter {
                 if(!returnedJson) break;
                 
                 foundWork = true;
-                const assignmentResponse = this.assignJob(returnedJson)
+                this.assignJob(returnedJson).catch(err => {
+                    console.error(`Slot assignment failed for job ${returnedJson?.jobId}`, err);
+                    this.activeWorkers.delete(returnedJson?.workerId);
+                });
             }
         }
         catch(e) {
@@ -91,10 +94,13 @@ class Supervisor extends EventEmitter {
 
         this.activeWorkers.add(workerId);
 
-        workerPromise.finally(() => {
+        workerPromise.catch(err => {
+            console.error(err);
+        })
+        .finally(() => {
             this.activeWorkers.delete(workerId);
-            this.#pollInterval = 50; 
-            this.emit('claimNextJob');
+            this.#pollInterval = 50;
+            this.emit("claimNextJob");
         });
 
         return true; 
@@ -110,10 +116,10 @@ class Supervisor extends EventEmitter {
                 await this.claimHandler()
             }
             catch(e) {
-                console.error(e); // <--- FIXED: Was console.error(err) which crashed
+                console.error(e); 
             }
         })
-    }
+    }   
 }
 
 module.exports = Supervisor;
