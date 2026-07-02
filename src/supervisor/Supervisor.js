@@ -1,6 +1,7 @@
 const { randomUUID } = require('node:crypto');
 const RedisStorage = require('../infrastructure/db/RedisStorage')
 const JobFetcher = require('./jobfetcher/JobFetcher')
+const Sweeper = require('./worker/Sweeper')
 const manager = new RedisDB(config)
 const fetcher = new RedisDB(config)
 const EventEmitter = require('events')
@@ -8,7 +9,8 @@ const EventEmitter = require('events')
 class Supervisor extends EventEmitter {
     #activeClaim = false
     #pollInterval = 50 
-
+    #forceShutdown = false
+    #sweeperInterval = 50
     constructor(jobJson) {
         super()
         this.name = jobJson.name;
@@ -16,11 +18,20 @@ class Supervisor extends EventEmitter {
         this.Heartbeat = jobJson.Heartbeat; 
         this.userProcess = jobJson.userProcess;
         this.maxConcurrency = jobJson.maxConcurrency;
-        this.storage = new RedisStorage(this.name , manager , fetcher)
+        this.storage = jobJson.storage
         this.activeWorkers = new Set(); 
         this.maxTimeoutMs = jobJson.maxTimeoutMs
         this.ttl = jobJson.ttl
         this.priorityOffset = jobJson.priorityOffset
+        this.#sweeperInterval = jobJson.sweeperInterval
+        this.sweeper = jobJson.sweeper
+    }
+
+    start = async () => {
+        
+        this.sweeper.start(this.#sweeperInterval);
+        this.callClaimHandler()
+        await this.claimHandler();
     }
 
     hasSlot = () => {
@@ -42,12 +53,12 @@ class Supervisor extends EventEmitter {
     }
     
     claimHandler = async () => {
-        if(this.#activeClaim) return;
+        if(this.#forceShutdown || this.#activeClaim) return;
         this.#activeClaim = true;
         let foundWork = false; 
 
         try {
-            while(this.hasSlot()) {
+            while(!(this.#forceShutdown) && this.hasSlot()) {
                 const returnedJson = await this.fetchJob()
                 if(!returnedJson) break;
                 
@@ -103,7 +114,7 @@ class Supervisor extends EventEmitter {
             this.emit("claimNextJob");
         });
 
-        return true; 
+        return; 
     }
 
     get availableSlots() {
@@ -120,6 +131,15 @@ class Supervisor extends EventEmitter {
             }
         })
     }   
+
+    stop = async () => {
+        console.log(`[Supervisor ${this.name}] Shutting down...`);
+        this.#forceShutdown = true; 
+        this.sweeper.stop()
+        console.log("Shutdown complete.");
+    }
 }
+
+    
 
 module.exports = Supervisor;

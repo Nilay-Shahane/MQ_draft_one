@@ -8,7 +8,7 @@ const waitToActiveLua = fs.readFileSync(path.join(__dirname, "../lua/ClaimNextJo
 const checkAndUpdateHeartbeatLua = fs.readFileSync(path.join(__dirname, "../lua/RenewJobLease.lua"), "utf8");
 const checkAndCompleteLua = fs.readFileSync(path.join(__dirname, "../lua/CheckAndComplete.lua"), "utf8");
 const addToDelayedOrDeadLua = fs.readFileSync(path.join(__dirname, "../lua/AddToDelayedOrDeadLua.lua"), "utf8");
-
+const sweeperLua = fs.readFileSync(path.join(__dirname, "../lua/Sweeper.lua"), "utf8")
 
 class RedisDB extends BaseDB{
     constructor(config={}){
@@ -46,6 +46,10 @@ class RedisDB extends BaseDB{
             lua : addToDelayedOrDeadLua
         })
 
+        this.client.defineCommand('sweeper',{
+            numberOfKeys : 3,
+            lua : sweeperLua
+        })
         this.client.on('error', (err) => console.error(`[RedisDB Port ${config.port || 6379}] Error:`, err));
     }
     maxRetriesDbConnect(times) {

@@ -23,6 +23,7 @@ class RedisStorage extends BaseStorage{
     async getPayload(jobId){
         return this.manager.client.hget(`${this.keyMap.main}:${jobId}`,'payload')
     }
+
     async addJobToQueue(serializedJob ,options = {}){
         const jobId = serializedJob.id;
         const jobKey = `${this.keyMap.main}:${jobId}`;
@@ -42,23 +43,26 @@ class RedisStorage extends BaseStorage{
         const priorityOffset = 10000;
         const maxQueueSize = options.maxQueueSize || 0;
 
-        const args = [jobId,
+        const args = [
+            jobId,
             serializedJob.priority || "normal",
             serializedJob.delay || 0,
             timestamp,
             priorityOffset,
             maxQueueSize,
-            ...hashArgs]
+            ...hashArgs
+        ];
            
-            const result = await this.manager.run('addJobtoQueue', ...keys,...args);
+        const result = await this.manager.run('addJobtoQueue', ...keys, ...args);
 
-            if (result === -1) {
+        if (result === -1) {
             throw new Error(`QueueFullError: Cannot add job. The queue "${this.keyMap.main}" has reached its maximum capacity of ${maxQueueSize}.`);
-           }
-            return result;
+        }
+
+        return result;
     }
 
-        async addBulkJobs(serializedJobsArray, options = {}) {
+    async addBulkJobs(serializedJobsArray, options = {}) {
         const CHUNK_SIZE = options.chunkSize || 1000; 
         let successCount = 0;
         let failedCount = 0;
@@ -92,7 +96,7 @@ class RedisStorage extends BaseStorage{
                     ...hashArgs
                 ];
 
-                pipeline.addJobtoQueue(...keys, ...args);
+                pipeline.run('addJobtoQueue', ...keys, ...args);
             }
 
             const pipelineResults = await pipeline.exec();
@@ -122,7 +126,6 @@ class RedisStorage extends BaseStorage{
         };
     }
 
-    
     async fromWaitingToActive(jobJson) {
         const {ttl = 30000 , priorityOffset = 10000 , workerId } = jobJson
 
@@ -134,16 +137,29 @@ class RedisStorage extends BaseStorage{
         ];
 
         const timestamp = Date.now();
-        
 
-        return await this.fetcher.claimNextJob(...keys , ttl , timestamp , priorityOffset , workerId);
+        return await this.fetcher.run(
+            'claimNextJob',
+            ...keys,
+            ttl,
+            timestamp,
+            priorityOffset,
+            workerId
+        );
     }
 
     async checkAndUpdateHeartbeat(heartbeat , jobId , workerId) {
         const keys = [
             this.keyMap.lock
         ]
-        return await this.manager.renewJobLease(...keys , jobId , workerId , heartbeat)
+
+        return await this.manager.run(
+            'renewJobLease',
+            ...keys,
+            jobId,
+            workerId,
+            heartbeat
+        )
     }
 
     async addToCompleted(workerId , jobId){
@@ -152,7 +168,13 @@ class RedisStorage extends BaseStorage{
             this.keyMap.active,
             this.keyMap.complete
         ]
-        return await this.manager.checkAndComplete(...keys , jobId , workerId)
+
+        return await this.manager.run(
+            'checkAndComplete',
+            ...keys,
+            jobId,
+            workerId
+        )
     }
 
     async addToFailed(jobId ,workerId , e){
@@ -162,12 +184,34 @@ class RedisStorage extends BaseStorage{
             this.keyMap.delay,
             this.keyMap.dead
         ]
+
         const jobKey = `${this.keyMap.main}:${jobId}`
-        return await this.manager.addToDelayedOrDead(...keys , jobId , workerId , jobKey)
+
+        return await this.manager.run(
+            'addToDelayedOrDead',
+            ...keys,
+            jobId,
+            workerId,
+            jobKey
+        )
+    }
+
+    async sweepZombies() {
+        const keys = [
+            this.keyMap.active,
+            this.keyMap.delay,
+            this.keyMap.dead
+        ];
+
+        return await this.manager.run(
+            'sweeper',
+            ...keys,
+            this.keyMap.lock,
+            this.keyMap.main
+        );
     }
 
     async shutdown() {
-        
         await Promise.all([
             this.manager.disconnect(),
             this.fetcher.disconnect()

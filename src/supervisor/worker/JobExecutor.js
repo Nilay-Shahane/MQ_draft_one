@@ -38,7 +38,7 @@ class JobExecutor{
         }
         catch(e){
             try {
-                await this.dbActions.addToFailed(e);
+                await this.dbActions.addToFailed(e.message);
             } catch (dbErr) {
                 console.log(`Error in db while performed failed job shifting operation ${dbErr}`)
                 throw new Error("Failed to record failed job", { cause: dbErr });
