@@ -2,6 +2,7 @@
 -- KEYS[2]: priority zset
 -- KEYS[3]: normal list
 -- KEYS[4]: delay zset
+--KEYS[5] : notification channel 
 
 -- ARGV[1]: jobId
 -- ARGV[2]: priorityString ("high", "normal")
@@ -15,6 +16,7 @@ local jobKey = KEYS[1]
 local priorityKey = KEYS[2]
 local normalKey = KEYS[3]
 local delayKey = KEYS[4]
+local notifyChannel = KEYS[5]
 
 local jobId = ARGV[1]
 local priorityString = ARGV[2]
@@ -50,6 +52,7 @@ elseif priorityString == "high" then
 else
     redis.call("RPUSH", normalKey, jobId)
 end
-
+ 
+redis .call("PUBLISH",notifyChannel,jobId);
 
 return 1

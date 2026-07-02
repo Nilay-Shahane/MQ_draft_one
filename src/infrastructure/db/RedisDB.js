@@ -22,7 +22,7 @@ class RedisDB extends BaseDB{
         })
 
         this.client.defineCommand('addJobtoQueue',{
-            numberOfKeys:4,
+            numberOfKeys: 5,
             lua:addJobLua
         });
 

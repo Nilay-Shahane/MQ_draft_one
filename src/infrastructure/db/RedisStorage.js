@@ -13,6 +13,7 @@ class RedisStorage extends BaseStorage{
             complete: `jiniq-draft:${nameOfQ}:complete`,
             delay: `jiniq-draft:${nameOfQ}:delay`,
             dead: `jiniq-draft:${nameOfQ}:dead`,
+            notify: `jiniq-draft:${nameOfQ}:notify`,
         }
         
         this.manager = ManagerInstance
@@ -31,7 +32,8 @@ class RedisStorage extends BaseStorage{
             jobKey,
             this.keyMap.priority,
             this.keyMap.normal,
-            this.keyMap.delay
+            this.keyMap.delay,
+            this.keyMap.notify
         ];
         const hashArgs = [];
 
@@ -57,9 +59,11 @@ class RedisStorage extends BaseStorage{
 
         if (result === -1) {
             throw new Error(`QueueFullError: Cannot add job. The queue "${this.keyMap.main}" has reached its maximum capacity of ${maxQueueSize}.`);
+           }
+           if (result !== 1 && result !== 0) {
+            throw new Error(`UnknownError: Lua script returned unexpected code ${result}`);
         }
-
-        return result;
+            return result;
     }
 
     async addBulkJobs(serializedJobsArray, options = {}) {
@@ -79,7 +83,7 @@ class RedisStorage extends BaseStorage{
             for (const serializedJob of chunk) {
                 const jobId = serializedJob.id;
                 const jobKey = `${this.keyMap.main}:${jobId}`;
-                const keys = [jobKey, this.keyMap.priority, this.keyMap.normal, this.keyMap.delay];
+                const keys = [jobKey, this.keyMap.priority, this.keyMap.normal, this.keyMap.delay,this.keyMap.notify];
                 
                 const hashArgs = [];
                 for (const [key, value] of Object.entries(serializedJob)) {
@@ -107,13 +111,20 @@ class RedisStorage extends BaseStorage{
                 if (err) {
                     failedCount++;
                     failedJobs.push({ id: originalJobId, reason: err.message });
-                } else if (result === -1) {
-                    failedCount++;
-                    failedJobs.push({ id: originalJobId, reason: 'QueueFullError: Reached max capacity' });
-                } else if (result === 0) {
-                    successCount++;
-                } else {
-                    successCount++; 
+                } 
+                switch(result) {
+                    case 1: // Standard success
+                    case 0: // Idempotent success (already exists)
+                        successCount++;
+                        break;
+                    case -1: // Known error: Queue Full
+                        failedCount++;
+                        failedJobs.push({ id: originalJobId, reason: 'QueueFullError: Reached max capacity' });
+                        break;
+                    default: // Unknown/Future error codes
+                        failedCount++;
+                        failedJobs.push({ id: originalJobId, reason: `UnknownError: Lua script returned unexpected code ${result}` });
+                        break;
                 }
             });
         }
