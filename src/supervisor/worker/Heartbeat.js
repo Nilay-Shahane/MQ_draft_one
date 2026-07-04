@@ -67,3 +67,5 @@ class HeartBeat{
          this.runHeartbeat()
     }
 }
+
+module.exports = HeartBeat

@@ -2,8 +2,6 @@ const { randomUUID } = require('node:crypto');
 const RedisStorage = require('../infrastructure/db/RedisStorage')
 const JobFetcher = require('./jobfetcher/JobFetcher')
 const Sweeper = require('./worker/Sweeper')
-const manager = new RedisDB(config)
-const fetcher = new RedisDB(config)
 const EventEmitter = require('events')
 
 class Supervisor extends EventEmitter {
@@ -101,7 +99,7 @@ class Supervisor extends EventEmitter {
             this.maxTimeoutMs, this.userProcess, dbActions
         );
 
-        const workerPromise = Promise.resolve().then(() => newWorker.beginWork());
+        const workerPromise = newWorker.beginWork();
 
         this.activeWorkers.add(workerId);
 
