@@ -41,6 +41,8 @@ end
 redis.call("HSET", jobKey, unpack(ARGV, 7))
 
 
+-- ... (top part remains the same) ...
+
 if delay > 0 then
     local runAt = timestamp + delay
     redis.call("ZADD", delayKey, runAt, jobId)
@@ -50,9 +52,10 @@ elseif priorityString == "high" then
     redis.call("ZADD", priorityKey, score, jobId)
     
 else
-    redis.call("RPUSH", normalKey, jobId)
+    -- [THE FIX]: Use ZADD instead of RPUSH for the normal queue!
+    redis.call("ZADD", normalKey, timestamp, jobId)
 end
  
-redis .call("PUBLISH",notifyChannel,jobId);
+redis.call("PUBLISH", notifyChannel, jobId);
 
 return 1

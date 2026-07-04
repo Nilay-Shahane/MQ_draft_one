@@ -26,11 +26,11 @@ redis.call("LREM", activeQ, 0, activePayload)
 
 -- 4. Route based on attempts
 if currAttempt <= maxAttempt then
-    -- Pushed to delayed queue
-    redis.call("RPUSH", delayQ, jobId)
+    -- [THE FIX]: Pushed to delayed queue using ZADD (score 0 means retry ASAP)
+    redis.call("ZADD", delayQ, 0, jobId)
     return 1 -- Retrying
 else
-    -- Pushed to dead queue
+    -- Pushed to dead queue (Dead queue is fine as a LIST!)
     redis.call("RPUSH", deadQ, jobId)
     return 2 -- Dead
 end
