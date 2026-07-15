@@ -3,12 +3,12 @@ const BaseDB = require('./BaseDB')
 const fs = require('fs')
 const path = require('path')
 
-const addJobLua = fs.readFileSync(path.join(__dirname, "../lua/AddJob.lua"),"utf8");
+const addJobLua = fs.readFileSync(path.join(__dirname, "../lua/AddJobLua.lua"), "utf8");
 const waitToActiveLua = fs.readFileSync(path.join(__dirname, "../lua/ClaimNextJob.lua"), "utf8");
-const checkAndUpdateHeartbeatLua = fs.readFileSync(path.join(__dirname, "../lua/RenewJobLease.lua"), "utf8");
+const checkAndUpdateHeartbeatLua = fs.readFileSync(path.join(__dirname, "../lua/CheckAndUpdateHeartbeat.lua"), "utf8");
 const checkAndCompleteLua = fs.readFileSync(path.join(__dirname, "../lua/CheckAndComplete.lua"), "utf8");
 const addToDelayedOrDeadLua = fs.readFileSync(path.join(__dirname, "../lua/AddToDelayedOrDeadLua.lua"), "utf8");
-const sweeperLua = fs.readFileSync(path.join(__dirname, "../lua/Sweeper.lua"), "utf8")
+const sweeperLua = fs.readFileSync(path.join(__dirname, "../lua/Sweeper.lua"), "utf8");
 
 class RedisDB extends BaseDB{
     constructor(config={}){
@@ -27,7 +27,7 @@ class RedisDB extends BaseDB{
         });
 
         this.client.defineCommand('claimNextJob', {
-            numberOfKeys: 4,
+            numberOfKeys: 5,
             lua: waitToActiveLua
         });
 

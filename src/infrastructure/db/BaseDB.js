@@ -19,3 +19,4 @@ class BaseDB {
     
     
 }
+module.exports = BaseDB;

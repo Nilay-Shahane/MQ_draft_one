@@ -1,40 +1,69 @@
-const Supervisor = require('./Supervisor');
+const { EventEmitter } = require('events');
+const RedisDB = require('../../infrastructure/db/RedisDB');
+const RedisStorage = require('../../infrastructure/db/RedisStorage');
+const Supervisor = require('../Supervisor');
+const Sweeper = require('./Sweeper');
 const JobExecutor = require('./JobExecutor');
 const HeartBeat = require('./HeartBeat');
-const Sweeper = require('./worker/Sweeper');
-const RedisStorage = require('../infrastructure/db/RedisStorage'); 
+const QueueStateManager = require('../../queue/QueueStateManager');
 
-class Worker {
-    constructor(queueName, processor, options = {}) {
-        if (!queueName || typeof processor !== 'function') {
-            throw new Error('Queue name and processor function are required.');
+class Worker extends EventEmitter {
+    #storageInstance;
+
+    constructor(queueName, processorFn, options = {}) {
+        super();
+        
+        if (!queueName || typeof processorFn !== 'function') {
+            throw new Error('Jiniq Worker: Queue name and a processor function are strictly required.');
         }
 
-        const concurrency = options.concurrency || 1;
-        const ttl = options.lockDuration || 30000; 
-        const sweeperInterval = options.stalledInterval || 30000;
+        this.queueName = queueName;
+        
+        const redisConfig = options.redisConfig || {};
+        const manager = new RedisDB(redisConfig);
+        const fetcher = new RedisDB(redisConfig);
+        
+        this.#storageInstance = new RedisStorage(queueName, manager, fetcher, redisConfig);
 
-        const storage = new RedisStorage(queueName, options.redis);
-        const sweeper = new Sweeper(storage, sweeperInterval);
+     
+        this.sweeper = new Sweeper(this.#storageInstance, options.sweeperInterval || 30000);
+        
+    
+        this.stateManager = new QueueStateManager(this.#storageInstance);
 
         this.supervisor = new Supervisor({
             name: queueName,
             JobExecutor: JobExecutor,
             Heartbeat: HeartBeat,
-            userProcess: processor,
-            maxConcurrency: concurrency,
-            storage: storage,
-            sweeper: sweeper,
-            ttl: ttl,
-            maxTimeoutMs: options.maxTimeoutMs || 300000,
-            priorityOffset: options.priorityOffset || 0,
-            sweeperInterval: sweeperInterval
+            userProcess: processorFn,
+            maxConcurrency: options.concurrency || 1,
+            storage: this.#storageInstance,
+            sweeper: this.sweeper,
+            stateManager: this.stateManager, // Injected here!
+            ttl: options.lockDuration || 30000,
+            priorityOffset: options.priorityOffset || 10000,
+            sweeperInterval: options.sweeperInterval || 30000,
+            maxTimeoutMs: options.maxTimeoutMs || 300000 
+        });
+        this.supervisor.on('job:completed', (data) => {
+            this.emit('job:completed', data);
+        });
+
+        this.supervisor.on('job:failed', (data) => {
+            this.emit('job:failed', data);
         });
     }
 
-    start() {
-        this.supervisor.start();
-        console.log(`Worker for queue ${this.supervisor.name} started.`);
+    async start() {
+        console.log(`[Jiniq Worker] Booting up consumer for queue "${this.queueName}"...`);
+        await this.supervisor.start();
+    }
+
+    async stop() {
+        console.log(`[Jiniq Worker] Initiating graceful shutdown...`);
+        await this.supervisor.stop();
+        await this.#storageInstance.shutdown();
+        console.log(`[Jiniq Worker] Offline.`);
     }
 } 
 

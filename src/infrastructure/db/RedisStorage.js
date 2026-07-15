@@ -1,8 +1,8 @@
 const BaseStorage = require('./BaseStorage')
 const RedisDB = require('./RedisDB')
 
-class RedisStorage extends BaseStorage{
-    constructor(nameOfQ , ManagerInstance , FetcherInstance ,config={}){
+class RedisStorage extends BaseStorage {
+    constructor(nameOfQ, ManagerInstance, FetcherInstance, config = {}) {
         super()
         this.keyMap = {
             main: `jiniq-draft:${nameOfQ}:main`,
@@ -18,14 +18,19 @@ class RedisStorage extends BaseStorage{
         
         this.manager = ManagerInstance
         this.fetcher = FetcherInstance
-
     }
 
-    async getPayload(jobId){
-        return this.manager.client.hget(`${this.keyMap.main}:${jobId}`,'payload')
+ async getPayload(jobId) {
+        const payloadStr = await this.manager.client.hget(`${this.keyMap.main}:${jobId}`, 'payload');
+        try {
+            // Turn the string back into a usable object!
+            return payloadStr ? JSON.parse(payloadStr) : null;
+        } catch (e) {
+            return payloadStr; // Fallback in case it wasn't a JSON object
+        }
     }
 
-    async addJobToQueue(serializedJob ,options = {}){
+    async addJobToQueue(serializedJob, options = {}) {
         const jobId = serializedJob.id;
         const jobKey = `${this.keyMap.main}:${jobId}`;
         const keys = [
@@ -36,9 +41,16 @@ class RedisStorage extends BaseStorage{
             this.keyMap.notify
         ];
         const hashArgs = [];
-
-        for(const [key,value] of Object.entries(serializedJob)){
-            hashArgs.push(key,value==null  || value == undefined ? " " : value.toString());
+        for (const [key, value] of Object.entries(serializedJob)) {
+            let strValue;
+            if (value == null) {
+                strValue = " ";
+            } else if (typeof value === 'object') {
+                strValue = JSON.stringify(value); // Safely convert nested objects to strings
+            } else {
+                strValue = value.toString();
+            }
+            hashArgs.push(key, strValue);
         }
         
         const timestamp = Date.now();
@@ -59,11 +71,12 @@ class RedisStorage extends BaseStorage{
 
         if (result === -1) {
             throw new Error(`QueueFullError: Cannot add job. The queue "${this.keyMap.main}" has reached its maximum capacity of ${maxQueueSize}.`);
-           }
-           if (result !== 1 && result !== 0) {
+        }
+        if (result !== 1 && result !== 0) {
             throw new Error(`UnknownError: Lua script returned unexpected code ${result}`);
         }
-            return result;
+        
+        return result;
     }
 
     async addBulkJobs(serializedJobsArray, options = {}) {
@@ -83,12 +96,26 @@ class RedisStorage extends BaseStorage{
             for (const serializedJob of chunk) {
                 const jobId = serializedJob.id;
                 const jobKey = `${this.keyMap.main}:${jobId}`;
-                const keys = [jobKey, this.keyMap.priority, this.keyMap.normal, this.keyMap.delay,this.keyMap.notify];
+                const keys = [
+                    jobKey, 
+                    this.keyMap.priority, 
+                    this.keyMap.normal, 
+                    this.keyMap.delay, 
+                    this.keyMap.notify
+                ];
                 
                 const hashArgs = [];
-                for (const [key, value] of Object.entries(serializedJob)) {
-                    hashArgs.push(key, value == null || value === undefined ? " " : value.toString());
-                }
+        for (const [key, value] of Object.entries(serializedJob)) {
+            let strValue;
+            if (value == null) {
+                strValue = " ";
+            } else if (typeof value === 'object') {
+                strValue = JSON.stringify(value); // Safely convert nested objects to strings
+            } else {
+                strValue = value.toString();
+            }
+            hashArgs.push(key, strValue);
+        }
 
                 const args = [
                     jobId,
@@ -111,20 +138,21 @@ class RedisStorage extends BaseStorage{
                 if (err) {
                     failedCount++;
                     failedJobs.push({ id: originalJobId, reason: err.message });
-                } 
-                switch(result) {
-                    case 1: // Standard success
-                    case 0: // Idempotent success (already exists)
-                        successCount++;
-                        break;
-                    case -1: // Known error: Queue Full
-                        failedCount++;
-                        failedJobs.push({ id: originalJobId, reason: 'QueueFullError: Reached max capacity' });
-                        break;
-                    default: // Unknown/Future error codes
-                        failedCount++;
-                        failedJobs.push({ id: originalJobId, reason: `UnknownError: Lua script returned unexpected code ${result}` });
-                        break;
+                } else {
+                    switch (result) {
+                        case 1: // Standard success
+                        case 0: // Idempotent success (already exists)
+                            successCount++;
+                            break;
+                        case -1: // Known error: Queue Full
+                            failedCount++;
+                            failedJobs.push({ id: originalJobId, reason: 'QueueFullError: Reached max capacity' });
+                            break;
+                        default: // Unknown/Future error codes
+                            failedCount++;
+                            failedJobs.push({ id: originalJobId, reason: `UnknownError: Lua script returned unexpected code ${result}` });
+                            break;
+                    }
                 }
             });
         }
@@ -136,15 +164,16 @@ class RedisStorage extends BaseStorage{
             failedJobs
         };
     }
-
+    
     async fromWaitingToActive(jobJson) {
-        const {ttl = 30000 , priorityOffset = 10000 , workerId } = jobJson
+        const { ttl = 30000, priorityOffset = 10000, workerId } = jobJson
 
         const keys = [
             this.keyMap.priority,
             this.keyMap.normal, 
             this.keyMap.active,
-            this.keyMap.lock
+            this.keyMap.lock,
+            this.keyMap.delay // Added this 5th key for the Lua script
         ];
 
         const timestamp = Date.now();
@@ -159,7 +188,7 @@ class RedisStorage extends BaseStorage{
         );
     }
 
-    async checkAndUpdateHeartbeat(heartbeat , jobId , workerId) {
+    async checkAndUpdateHeartbeat(heartbeat, jobId, workerId) {
         const keys = [
             this.keyMap.lock
         ]
@@ -173,7 +202,7 @@ class RedisStorage extends BaseStorage{
         )
     }
 
-    async addToCompleted(workerId , jobId){
+    async addToCompleted(workerId, jobId) {
         const keys = [
             this.keyMap.lock,
             this.keyMap.active,
@@ -188,7 +217,7 @@ class RedisStorage extends BaseStorage{
         )
     }
 
-    async addToFailed(jobId ,workerId , e){
+    async addToFailed(jobId, workerId, e) {
         const keys = [
             this.keyMap.lock,
             this.keyMap.active,
@@ -205,6 +234,26 @@ class RedisStorage extends BaseStorage{
             workerId,
             jobKey
         )
+    }
+
+   async publishLog(jobId, status, payload, error = null) {
+        // 1. Extract the queue name dynamically from your keyMap
+        const queueName = this.keyMap.main.split(':')[1];
+        const logChannel = `jiniq-draft:${queueName}:logs`;
+        
+        // Ensure the payload is a string for the frontend table
+        const payloadStr = typeof payload === 'object' ? JSON.stringify(payload) : String(payload);
+        
+        const logEntry = {
+            id: jobId.split(':')[1] || jobId, // Clean up the ID for the UI
+            status: status, 
+            payload: payloadStr,
+            time: new Date().toLocaleTimeString('en-US', { hour12: false }),
+            error: error
+        };
+        
+        // 2. Use the manager's client to broadcast!
+        await this.manager.client.publish(logChannel, JSON.stringify(logEntry));
     }
 
     async sweepZombies() {

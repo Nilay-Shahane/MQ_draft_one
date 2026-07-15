@@ -1,13 +1,13 @@
 const { EventEmitter } = require("events");
 const JobSubmitted = require("../domain/events/JobSubmitted");
 const Job = require("../domain/Job");
-const crypto = require("crypto");
+const IdGenerator = require("../utils/IdGenerator");
 
 // The Queue now imports its own infrastructure
 const RedisDB = require("../infrastructure/db/RedisDB");
-const RedisStorage = require("../infrastructure/RedisStorage");
+const RedisStorage = require("../infrastructure/db/RedisStorage");
 
-class Queue extends EventEmitter {
+class Jiniq extends EventEmitter {
     // 1. We use '#' to make these strictly private. The user CANNOT access them!
     #queueName;
     #storageInstance;
@@ -15,18 +15,17 @@ class Queue extends EventEmitter {
     #bulkChunkSize;
 
     constructor(queueName, options = {}) {
-        super();
-        if (!queueName) throw new Error("Queue name is required as a first argument");
+        super(); 
+       if (!queueName || typeof queueName !== 'string' || queueName.trim() === '') {
+            throw new Error("Jiniq: A valid string queueName is required to initialize.");
+        }
         
-        this.#queueName = queueName;
+        this.#queueName = queueName.trim();
         this.#maxQueueSize = options.maxQueueSize || 0;
         this.#bulkChunkSize = options.bulkChunkSize || 1000;
 
-        // 2. FACADE PATTERN: We initialize Redis internally. 
-        // The end-user never touches RedisDB or RedisStorage directly!
+
         const redisConfig = options.redisConfig || {};
-        
-        // We spin up the DB and Fetcher connections internally
         const managerInstance = new RedisDB(redisConfig);
         const fetcherInstance = new RedisDB(redisConfig);
         
@@ -39,16 +38,18 @@ class Queue extends EventEmitter {
     }
 
     async addJob(jobName, payload = {}, options = {}) {
-        if (!jobName) throw new Error("Job name is required");
+        if (!jobName || typeof jobName !== 'string') {
+            throw new TypeError("Jiniq: jobName must be a valid string.");
+        }
         
-        const jobId = options.jobId || crypto.randomUUID();
+        
 
         const payloadString = JSON.stringify(payload);
         const payloadSize = Buffer.byteLength(payloadString, 'utf8');
         if (payloadSize > 1024 * 1024) { 
             throw new Error(`PayloadTooLargeError: Payload is ${(payloadSize/1024/1024).toFixed(2)}MB. Limit is 1MB.`);
         }
-
+        const jobId = options.jobId || IdGenerator.generate();
         const job = new Job({
             id: jobId,
             name: jobName,
@@ -80,14 +81,15 @@ class Queue extends EventEmitter {
         const domainJobs = [];
 
         for (const item of jobsArray) {
-            if (!item.name) throw new Error("Every bulk job must have a name");
-            
+            if (!item.name || typeof item.name !== 'string') {
+                throw new TypeError("Jiniq: Each bulk job must have a valid string name.");
+            }
             const payloadString = JSON.stringify(item.payload || {});
             if (Buffer.byteLength(payloadString, 'utf8') > 1024 * 1024) {
                 throw new Error(`PayloadTooLargeError: Bulk job "${item.name}" exceeds 1MB limit. Bulk operation aborted.`);
             }
 
-            const jobId = (item.options && item.options.jobId) ? item.options.jobId : crypto.randomUUID();
+            const jobId = (item.options && item.options.jobId) ? item.options.jobId : IdGenerator.generate();
             
             const job = new Job({
                 id: jobId,
@@ -99,8 +101,6 @@ class Queue extends EventEmitter {
             domainJobs.push(job);
             serializedJobs.push(job.toRedisHash());
         }
-
-        // Access private internal storage
         const result = await this.#storageInstance.addBulkJobs(serializedJobs, { 
             maxQueueSize: this.#maxQueueSize,
             chunkSize: this.#bulkChunkSize 
@@ -120,4 +120,4 @@ class Queue extends EventEmitter {
     }
 }
 
-module.exports = Queue;
+module.exports = Jiniq;

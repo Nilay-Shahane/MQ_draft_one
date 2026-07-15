@@ -14,9 +14,12 @@ class JobExecutor{
         const controller = new AbortController();
         const newHeartbeatInstance = new this.Heartbeat(this.ttl, this.workerId, this.jobId, this.dbActions, () => controller.abort());
         let timeoutId;
+        
+        // Hoisted so the catch block can send the payload to the dashboard if it crashes
+        let payload = null; 
 
         try {
-            const payload = await this.dbActions.getPayload(this.jobId);
+            payload = await this.dbActions.getPayload(this.jobId);
             
             await newHeartbeatInstance.startHeartbeatProcess();
             
@@ -36,6 +39,10 @@ class JobExecutor{
 
             try {
                 await this.dbActions.addToCompleted();
+                
+                // 🟢 ADDED: Broadcast success to the React Dashboard
+                await this.dbActions.publishLog(this.jobId, 'Completed', payload);
+                
             } catch (dbErr) {
                 console.error(`CRITICAL: Job ${this.jobId} succeeded but failed to mark as complete.`, dbErr);
             }
@@ -48,11 +55,16 @@ class JobExecutor{
 
             try {
                 await this.dbActions.addToFailed(e.message);
+                
+                // 🔴 ADDED: Broadcast crash and stack trace to the React Dashboard
+                await this.dbActions.publishLog(this.jobId, 'Failed', payload, e.stack || e.message);
+                
             } catch (dbErr) {
                 console.error(`Failed to record failed job: ${dbErr}`);
             }
             
-            throw e; //is this needed , why does supervisor need to know it 
+            // To answer your question: Yes, keep this!
+            throw e; 
         } finally {
             newHeartbeatInstance.setStopHeartBeat(true);
         }

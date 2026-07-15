@@ -1,25 +1,19 @@
-const RedisDB = require('../infrastructure/db/RedisDB')
-const { randomUUID } = require('node:crypto');
-class QueueStateManager{
-    constructor(){
-
+const IdGenerator = require('../utils/IdGenerator');
+class QueueStateManager {
+    constructor(storage) {
+        this.storage = storage;
     }
-    workerIdGenerator = async () =>{    
-        return randomUUID();
+    fetchJob = async (ttl = 30000, priorityOffset = 10000) => {
+        const workerId = IdGenerator.generate();
+        const jobId = await this.storage.fromWaitingToActive({
+            ttl: ttl,
+            priorityOffset: priorityOffset,
+            workerId: workerId,
+        });
+        
+        if (!jobId) return null;
+        return { jobId, workerId };
     }
-
-
-    fetchJob = async () =>{
-        const workerId = await this.workerIdGenerator()
-        const jobId = await this.fromWaitingToActive({
-            ttl:3000,
-            priorityOffset : 10000 ,
-            workerId : workerId,
-        })
-        return jobId
-    }
-
-    
 }
 
-module.exports = QueueStateManager
+module.exports = QueueStateManager;

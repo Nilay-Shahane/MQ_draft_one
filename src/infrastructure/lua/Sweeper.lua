@@ -1,5 +1,5 @@
 local activeQ = KEYS[1]
-local delayQ = KEYS[2] 
+local delayQ = KEYS[2]
 local deadQ = KEYS[3]
 
 local lockPrefix = ARGV[1]
@@ -12,13 +12,14 @@ local sweptCount = 0
 for _, payload in ipairs(activeJobs) do
     -- Extract jobId from the "jobId:workerId" payload
     local splitIndex = string.find(payload, ":")
+    
     if splitIndex then
         local jobId = string.sub(payload, 1, splitIndex - 1)
         
         local lockKey = lockPrefix .. ":" .. jobId
         local jobHashKey = jobHashPrefix .. ":" .. jobId
         
-        -- If the lock is missing, the heartbeat flatlined (Worker crashed)
+        -- If the lock is missing, the heartbeat flatlined (Worker crashed or stalled)
         if redis.call('EXISTS', lockKey) == 0 then
             
             -- 1. Remove from active queue
@@ -26,14 +27,20 @@ for _, payload in ipairs(activeJobs) do
             
             -- 2. Atomically increment the attempt counter
             local currAttempt = redis.call('HINCRBY', jobHashKey, 'currAttempt', 1)
-            local maxAttempt = tonumber(redis.call('HGET', jobHashKey, 'maxAttempt') or 0)
+            
+            -- Safely parse maxAttempt (Handles cases where the hash field doesn't exist yet)
+            local maxAttemptRaw = redis.call('HGET', jobHashKey, 'maxAttempt')
+            local maxAttempt = 0
+            if maxAttemptRaw then
+                maxAttempt = tonumber(maxAttemptRaw) or 0
+            end
             
             -- 3. Route based on attempts
             if currAttempt <= maxAttempt then
-                -- Push to delayed queue (Partner's code handles the routing from here)
-                redis.call('RPUSH', delayQ, jobId)
+                -- Move to delayed queue (ZADD requires exactly 4 arguments: command, key, score, member)
+                redis.call('ZADD', delayQ, 0, jobId)
             else
-                -- Max attempts reached, push to dead letter queue
+                -- Max attempts reached, push to dead letter list (RPUSH requires 3 arguments)
                 redis.call('RPUSH', deadQ, jobId)
             end
             
