@@ -237,25 +237,25 @@ class RedisStorage extends BaseStorage {
     }
 
    async publishLog(jobId, status, payload, error = null) {
-        // 1. Extract the queue name dynamically from your keyMap
-        const queueName = this.keyMap.main.split(':')[1];
-        const logChannel = `jiniq-draft:${queueName}:logs`;
-        
-        // Ensure the payload is a string for the frontend table
-        const payloadStr = typeof payload === 'object' ? JSON.stringify(payload) : String(payload);
-        
-        const logEntry = {
-            id: jobId.split(':')[1] || jobId, // Clean up the ID for the UI
-            status: status, 
-            payload: payloadStr,
-            time: new Date().toLocaleTimeString('en-US', { hour12: false }),
-            error: error
-        };
-        
-        // 2. Use the manager's client to broadcast!
-        await this.manager.client.publish(logChannel, JSON.stringify(logEntry));
-    }
+    const queueName = this.keyMap.main.split(':')[1];
+    const streamKey = `jiniq-draft:${queueName}:logs`;
 
+    const payloadStr =
+        typeof payload === "object"
+            ? JSON.stringify(payload)
+            : String(payload);
+
+    await this.manager.client.xadd(
+        streamKey,
+        "MAXLEN", "~", 1000,   // Keep roughly the latest 10k logs
+        "*",
+        "jobId", jobId,
+        "status", status,
+        "payload", payloadStr,
+        "timestamp", Date.now().toString(),
+        "error", error ? String(error) : ""
+    );
+}
     async sweepZombies() {
         const keys = [
             this.keyMap.active,
