@@ -127,7 +127,7 @@ class RedisStorage extends BaseStorage {
                     ...hashArgs
                 ];
 
-                pipeline.run('addJobtoQueue', ...keys, ...args);
+                pipeline.addJobtoQueue(...keys, ...args);
             }
 
             const pipelineResults = await pipeline.exec();
