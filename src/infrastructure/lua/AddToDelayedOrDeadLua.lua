@@ -31,6 +31,6 @@ if currAttempt <= maxAttempt then
     return 1 -- Retrying
 else
     -- Pushed to dead queue (Dead queue is fine as a LIST!)
-    redis.call("RPUSH", deadQ, jobId)
+    redis.call("RPUSH", deadQ, jobId )
     return 2 -- Dead
 end

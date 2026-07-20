@@ -51,7 +51,12 @@ class HeartBeat{
 
                 if (this.#stopHeartbeat) break;
 
-                await this.dbActions.checkAndUpdateHeartbeat()
+                let heartBeatResp = await this.dbActions.checkAndUpdateHeartbeat()
+                if(heartBeatResp!==1){
+                    this.setStopHeartBeat(true) 
+                    if(this.abortFn) this.abortFn()
+                    break
+                }
 
             }
 
@@ -62,9 +67,17 @@ class HeartBeat{
     }
 
     startHeartbeatProcess = async() =>{
-         await this.randomOffset()
-         await this.dbActions.checkAndUpdateHeartbeat()
-         this.runHeartbeat()
+        await this.randomOffset()
+
+        let resp = await this.dbActions.checkAndUpdateHeartbeat()
+
+        if(resp !== 1){
+            this.setStopHeartBeat(true)
+            if(this.abortFn) this.abortFn()
+            return;
+        }
+
+        this.runHeartbeat()
     }
 }
 

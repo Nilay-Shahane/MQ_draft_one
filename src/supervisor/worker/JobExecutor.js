@@ -38,10 +38,19 @@ class JobExecutor{
             clearTimeout(timeoutId); 
 
             try {
-                await this.dbActions.addToCompleted();
-                
-                // 🟢 ADDED: Broadcast success to the React Dashboard
-                await this.dbActions.publishLog(this.jobId, 'Completed', payload);
+                const completed = await this.dbActions.addToCompleted();
+
+                if(completed !== 1){
+                    console.warn(
+                        `Job ${this.jobId} completion rejected. Ownership lost`
+                    );
+                    return resp;
+                }
+
+                await this.dbActions.publishLog(
+                    'Completed',
+                    payload
+                );
                 
             } catch (dbErr) {
                 console.error(`CRITICAL: Job ${this.jobId} succeeded but failed to mark as complete.`, dbErr);
@@ -57,8 +66,7 @@ class JobExecutor{
                 await this.dbActions.addToFailed(e.message);
                 
                 // 🔴 ADDED: Broadcast crash and stack trace to the React Dashboard
-                await this.dbActions.publishLog(this.jobId, 'Failed', payload, e.stack || e.message);
-                
+               await this.dbActions.publishLog('Failed', payload, e.stack || e.message)
             } catch (dbErr) {
                 console.error(`Failed to record failed job: ${dbErr}`);
             }
