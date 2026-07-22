@@ -208,12 +208,14 @@ class RedisStorage extends BaseStorage {
             this.keyMap.active,
             this.keyMap.complete
         ]
+        const jobKey = `${this.keyMap.main}:${jobId}`
 
         return await this.manager.run(
             'checkAndComplete',
             ...keys,
             jobId,
-            workerId
+            workerId,
+            jobKey
         )
     }
 

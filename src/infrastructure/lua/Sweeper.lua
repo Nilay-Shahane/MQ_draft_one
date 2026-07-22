@@ -26,22 +26,24 @@ for _, payload in ipairs(activeJobs) do
             redis.call('LREM', activeQ, 0, payload)
             
             -- 2. Atomically increment the attempt counter
-            local currAttempt = redis.call('HINCRBY', jobHashKey, 'currAttempt', 1)
+            local currAttempt = redis.call('HINCRBY', jobHashKey, 'attempt', 1)
             
-            -- Safely parse maxAttempt (Handles cases where the hash field doesn't exist yet)
-            local maxAttemptRaw = redis.call('HGET', jobHashKey, 'maxAttempt')
+            -- Safely parse maxAttempts
+            local maxAttemptRaw = redis.call('HGET', jobHashKey, 'maxAttempts')
             local maxAttempt = 0
             if maxAttemptRaw then
                 maxAttempt = tonumber(maxAttemptRaw) or 0
             end
             
-            -- 3. Route based on attempts
+            -- 3. Route and UPDATE STATUS based on attempts
             if currAttempt <= maxAttempt then
-                -- Move to delayed queue (ZADD requires exactly 4 arguments: command, key, score, member)
+                -- Move to delayed queue
                 redis.call('ZADD', delayQ, 0, jobId)
+                redis.call('HSET', jobHashKey, 'status', 'delayed')
             else
-                -- Max attempts reached, push to dead letter list (RPUSH requires 3 arguments)
+                -- Max attempts reached, push to dead letter list
                 redis.call('RPUSH', deadQ, jobId)
+                redis.call('HSET', jobHashKey, 'status', 'dead')
             end
             
             sweptCount = sweptCount + 1
