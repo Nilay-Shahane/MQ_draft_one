@@ -44,11 +44,7 @@ class Supervisor extends EventEmitter {
 
     // Safely returns the { jobId, workerId } object
     fetchJob = async () => {
-        if (this.stateManager) {
-            return await this.stateManager.fetchJob(this.ttl, this.priorityOffset);
-        }
         
-        // Fallback safety net
         const workerId = IdGenerator.generate();
         const jobId = await this.storage.fromWaitingToActive({
             ttl: this.ttl,

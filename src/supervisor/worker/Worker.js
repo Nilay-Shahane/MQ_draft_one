@@ -1,5 +1,5 @@
 const { EventEmitter } = require('events');
-const RedisDB = require('../../infrastructure/db/RedisDB');
+const RedisFactory = require('../../infrastructure/db/RedisFactory');
 const RedisStorage = require('../../infrastructure/db/RedisStorage');
 const Supervisor = require('../Supervisor');
 const Sweeper = require('./Sweeper');
@@ -20,16 +20,15 @@ class Worker extends EventEmitter {
         this.queueName = queueName;
         
         const redisConfig = options.redisConfig || {};
-        const manager = new RedisDB(redisConfig);
-        const fetcher = new RedisDB(redisConfig);
+        RedisFactory.initialize(redisConfig);
+        const manager = RedisFactory.getManager(redisConfig);
+        const fetcher = RedisFactory.getFetcher(redisConfig);
         
         this.#storageInstance = new RedisStorage(queueName, manager, fetcher, redisConfig);
 
      
         this.sweeper = new Sweeper(this.#storageInstance, options.sweeperInterval || 30000);
         
-    
-        this.stateManager = new QueueStateManager(this.#storageInstance);
 
         this.supervisor = new Supervisor({
             name: queueName,
